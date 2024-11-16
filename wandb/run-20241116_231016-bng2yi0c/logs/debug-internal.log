@@ -1,0 +1,16 @@
+{"time":"2024-11-16T23:10:16.715426+05:30","level":"INFO","msg":"using version","core version":"0.18.5"}
+{"time":"2024-11-16T23:10:16.715481+05:30","level":"INFO","msg":"created symlink","path":"/Users/satvikbajpai/Documents/deeplearning/dl_final_project/deepcamo/wandb/run-20241116_231016-bng2yi0c/logs/debug-core.log"}
+{"time":"2024-11-16T23:10:16.931198+05:30","level":"INFO","msg":"created new stream","id":"bng2yi0c"}
+{"time":"2024-11-16T23:10:16.931236+05:30","level":"INFO","msg":"stream: started","id":"bng2yi0c"}
+{"time":"2024-11-16T23:10:16.931272+05:30","level":"INFO","msg":"sender: started","stream_id":"bng2yi0c"}
+{"time":"2024-11-16T23:10:16.93126+05:30","level":"INFO","msg":"writer: Do: started","stream_id":{"value":"bng2yi0c"}}
+{"time":"2024-11-16T23:10:16.931337+05:30","level":"INFO","msg":"handler: started","stream_id":{"value":"bng2yi0c"}}
+{"time":"2024-11-16T23:10:17.501454+05:30","level":"INFO","msg":"Starting system monitor"}
+{"time":"2024-11-16T23:11:57.626398+05:30","level":"INFO","msg":"stream: closing","id":"bng2yi0c"}
+{"time":"2024-11-16T23:11:57.626516+05:30","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2024-11-16T23:11:57.629616+05:30","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2024-11-16T23:12:03.132007+05:30","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2024-11-16T23:12:03.51378+05:30","level":"INFO","msg":"handler: closed","stream_id":{"value":"bng2yi0c"}}
+{"time":"2024-11-16T23:12:03.513831+05:30","level":"INFO","msg":"sender: closed","stream_id":"bng2yi0c"}
+{"time":"2024-11-16T23:12:03.513819+05:30","level":"INFO","msg":"writer: Close: closed","stream_id":{"value":"bng2yi0c"}}
+{"time":"2024-11-16T23:12:03.514294+05:30","level":"INFO","msg":"stream: closed","id":"bng2yi0c"}

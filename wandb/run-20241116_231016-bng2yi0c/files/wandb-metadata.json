@@ -1,0 +1,43 @@
+{
+  "os": "macOS-14.6-arm64-arm-64bit",
+  "python": "3.12.2",
+  "startedAt": "2024-11-16T17:40:16.713519Z",
+  "args": [
+    "--params",
+    "params_Canyon"
+  ],
+  "program": "/Users/satvikbajpai/Documents/deeplearning/dl_final_project/deepcamo/camouflage_HRNet.py",
+  "codePath": "camouflage_HRNet.py",
+  "git": {
+    "remote": "https://github.com/ferrero-dl/deepcamo.git",
+    "commit": "de68ffc5ee484e456a21167ed522ea9a3af50b22"
+  },
+  "email": "satvikbajpai@gmail.com",
+  "root": "/Users/satvikbajpai/Documents/deeplearning/dl_final_project/deepcamo",
+  "host": "MacBook-Pro-3.local",
+  "username": "satvikbajpai",
+  "executable": "/Users/satvikbajpai/miniconda3/envs/dl/bin/python",
+  "codePathLocal": "camouflage_HRNet.py",
+  "cpu_count": 8,
+  "cpu_count_logical": 8,
+  "disk": {
+    "/": {
+      "total": "245107195904",
+      "used": "196131549184"
+    }
+  },
+  "memory": {
+    "total": "8589934592"
+  },
+  "cpu": {
+    "count": 8,
+    "countLogical": 8
+  },
+  "apple": {
+    "name": "Apple M1",
+    "ecpuCores": 4,
+    "pcpuCores": 4,
+    "gpuCores": 8,
+    "memoryGb": 8
+  }
+}

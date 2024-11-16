@@ -1,0 +1,30 @@
+/Users/satvikbajpai/miniconda3/envs/dl/lib/python3.12/site-packages/torchvision/models/_utils.py:208: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and may be removed in the future, please use 'weights' instead.
+  warnings.warn(
+/Users/satvikbajpai/miniconda3/envs/dl/lib/python3.12/site-packages/torchvision/models/_utils.py:223: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and may be removed in the future. The current behavior is equivalent to passing `weights=VGG19_Weights.IMAGENET1K_V1`. You can also use `weights=VGG19_Weights.DEFAULT` to get the most up-to-date weights.
+  warnings.warn(msg)
+mask size,height:240,width:576
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 130/130 [00:09<00:00, 14.04it/s]
+hidden region...,height-1040:1280,width-552:1128
+After 0 iterations:
+Total loss:  6.322391986846924
+Style loss:  6.1001715660095215
+camouflage loss:  0.0805453211069107
+camouflage loss leave:  0.0006957323639653623
+camouflage loss remove:  0.038881197571754456
+regularization loss:  0.0858621746301651
+total variation loss:  0.05581304430961609
+content loss:  0.0
+elapsed time:0:00:03.785016
+Traceback (most recent call last):
+  File "/Users/satvikbajpai/Documents/deeplearning/dl_final_project/deepcamo/camouflage_HRNet.py", line 365, in <module>
+    main(params.CFG)
+  File "/Users/satvikbajpai/Documents/deeplearning/dl_final_project/deepcamo/camouflage_HRNet.py", line 293, in main
+    total_loss.backward()
+  File "/Users/satvikbajpai/miniconda3/envs/dl/lib/python3.12/site-packages/torch/_tensor.py", line 521, in backward
+    torch.autograd.backward(
+  File "/Users/satvikbajpai/miniconda3/envs/dl/lib/python3.12/site-packages/torch/autograd/__init__.py", line 289, in backward
+    _engine_run_backward(
+  File "/Users/satvikbajpai/miniconda3/envs/dl/lib/python3.12/site-packages/torch/autograd/graph.py", line 768, in _engine_run_backward
+    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
