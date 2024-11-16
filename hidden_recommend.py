@@ -17,13 +17,13 @@ def HOG(img):
         H, W = gray.shape
 
         # padding before grad
-        gray = np.pad(gray, (1, 1), 'edge')
+        gray = np.pad(gray, (1, 1), "edge")
 
         # get grad x
-        gx = gray[1:H+1, 2:] - gray[1:H+1, :W]
+        gx = gray[1 : H + 1, 2:] - gray[1 : H + 1, :W]
         # get grad y
-        gy = gray[2:, 1:W+1] - gray[:H, 1:W+1]
-        # replace 0 with 
+        gy = gray[2:, 1 : W + 1] - gray[:H, 1 : W + 1]
+        # replace 0 with
         gx[gx == 0] = 1e-6
 
         return gx, gy
@@ -31,7 +31,7 @@ def HOG(img):
     # get magnitude and gradient
     def get_MagGrad(gx, gy):
         # get gradient maginitude
-        magnitude = np.sqrt(gx ** 2 + gy ** 2)
+        magnitude = np.sqrt(gx**2 + gy**2)
 
         # get gradient angle
         gradient = np.arctan(gy / gx)
@@ -50,10 +50,11 @@ def HOG(img):
 
         # quantization
         for i in range(9):
-            gradient_quantized[np.where((gradient >= d * i) & (gradient <= d * (i + 1)))] = i
+            gradient_quantized[
+                np.where((gradient >= d * i) & (gradient <= d * (i + 1)))
+            ] = i
 
         return gradient_quantized
-
 
     # get gradient histogram
     def gradient_histogram(gradient_quantized, magnitude, N=8):
@@ -70,19 +71,29 @@ def HOG(img):
             for x in range(cell_N_W):
                 for j in range(N):
                     for i in range(N):
-                        histogram[y, x, gradient_quantized[y * 4 + j, x * 4 + i]] += magnitude[y * 4 + j, x * 4 + i]
+                        histogram[
+                            y, x, gradient_quantized[y * 4 + j, x * 4 + i]
+                        ] += magnitude[y * 4 + j, x * 4 + i]
 
         return histogram
 
-		# histogram normalization
+    # histogram normalization
     def normalization(histogram, C=3, epsilon=1):
         cell_N_H, cell_N_W, _ = histogram.shape
         ## each histogram
         for y in range(cell_N_H):
-    	    for x in range(cell_N_W):
-       	    #for i in range(9):
-                histogram[y, x] /= np.sqrt(np.sum(histogram[max(y - 1, 0) : min(y + 2, cell_N_H),
-                                                            max(x - 1, 0) : min(x + 2, cell_N_W)] ** 2) + epsilon)
+            for x in range(cell_N_W):
+                # for i in range(9):
+                histogram[y, x] /= np.sqrt(
+                    np.sum(
+                        histogram[
+                            max(y - 1, 0) : min(y + 2, cell_N_H),
+                            max(x - 1, 0) : min(x + 2, cell_N_W),
+                        ]
+                        ** 2
+                    )
+                    + epsilon
+                )
 
         return histogram
 
@@ -100,47 +111,51 @@ def HOG(img):
 
     # 4. Gradient histogram
     histogram = gradient_histogram(gradient_quantized, magnitude)
-    
+
     # 5. Histogram normalization
     histogram = normalization(histogram)
 
     return histogram
 
-def recommend(origin,fore,mask_dilated):
-    h,w,_=fore.shape
-    fore_hog=HOG(fore)
-    h_hog,w_hog,_=fore_hog.shape
 
-    fore_hist=fore_hog[np.where(cv2.resize(mask_dilated,(w_hog,h_hog))>0)]
+def recommend(origin, fore, mask_dilated):
+    h, w, _ = fore.shape
+    fore_hog = HOG(fore)
+    h_hog, w_hog, _ = fore_hog.shape
 
-    origin_hog=HOG(origin)
-    h_hog_origin,w_hog_origin,_=origin_hog.shape
+    fore_hist = fore_hog[np.where(cv2.resize(mask_dilated, (w_hog, h_hog)) > 0)]
 
-    mat_idxes=np.where(cv2.resize(mask_dilated,(w_hog,h_hog))>0)
-    mat_idxes_origin=np.where(mask_dilated>0)
+    origin_hog = HOG(origin)
+    h_hog_origin, w_hog_origin, _ = origin_hog.shape
 
+    mat_idxes = np.where(cv2.resize(mask_dilated, (w_hog, h_hog)) > 0)
+    mat_idxes_origin = np.where(mask_dilated > 0)
 
-    origin_gray=cv2.cvtColor(origin,cv2.COLOR_BGR2GRAY)
+    origin_gray = cv2.cvtColor(origin, cv2.COLOR_BGR2GRAY)
     ent = entropy(origin_gray, disk(5))
 
-
-    objective_list=[]
-    for y_start in tqdm(range(0,h_hog_origin-h//8)):
-        for x_start in range(0,w_hog_origin-w//8):
+    objective_list = []
+    for y_start in tqdm(range(0, h_hog_origin - h // 8)):
+        for x_start in range(0, w_hog_origin - w // 8):
             try:
-                bg_hist=origin_hog[y_start:y_start+h//8,x_start:x_start+w//8]
-                bg_hist=bg_hist[mat_idxes]
-                mat_entropy=ent[y_start*8:y_start*8+h,x_start*8:x_start*8+w][mat_idxes_origin]
-                objective = np.sum(np.abs(fore_hist-bg_hist)) - np.sum(mat_entropy)
-                objective_list.append([objective,y_start,x_start])
+                bg_hist = origin_hog[
+                    y_start : y_start + h // 8, x_start : x_start + w // 8
+                ]
+                bg_hist = bg_hist[mat_idxes]
+                mat_entropy = ent[
+                    y_start * 8 : y_start * 8 + h, x_start * 8 : x_start * 8 + w
+                ][mat_idxes_origin]
+                objective = np.sum(np.abs(fore_hist - bg_hist)) - np.sum(mat_entropy)
+                objective_list.append([objective, y_start, x_start])
             except:
-                print(y_start,y_start+h//8,x_start,x_start+w//8,bg_hist.shape)
+                print(
+                    y_start, y_start + h // 8, x_start, x_start + w // 8, bg_hist.shape
+                )
 
-    objective_list=np.array(objective_list)
-    idx=np.argmin(objective_list[:,0])
+    objective_list = np.array(objective_list)
+    idx = np.argmin(objective_list[:, 0])
     objective_list[idx]
 
-    _,y_start,x_start=objective_list[np.argmin(objective_list[:,0])]
-    y_start,x_start=int(y_start*8),int(x_start*8)
-    return y_start,x_start
-    
+    _, y_start, x_start = objective_list[np.argmin(objective_list[:, 0])]
+    y_start, x_start = int(y_start * 8), int(x_start * 8)
+    return y_start, x_start
