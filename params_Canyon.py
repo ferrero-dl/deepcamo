@@ -2,10 +2,10 @@ class CFG:
     ########################
     #### initial setting ###
     ########################
-    input_path = "samples/inputs/croc.jpeg"
-    mask_path = "samples/masks/croc_mask.jpeg"  # Updated path
-    bg_path = "samples/inputs/style_image.jpg"
-    output_dir = "samples/outputs/HRNet/Canyon_kuma"
+    input_path = "samples/inputs/doublefish.jpeg"
+    mask_path = "samples/masks/double_mask.jpeg"  # Updated path
+    bg_path = "samples/inputs/crazyfish.jpeg"
+    output_dir = "samples/outputs/HRNet/"
     name = "camouflage"
     seed = 0
 

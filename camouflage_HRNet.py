@@ -56,6 +56,7 @@ def main(args):
     os.makedirs(steps_dir, exist_ok=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("Using device: {}".format(device))
     VGG = models.vgg19(pretrained=True).features
     VGG.to(device)
 
