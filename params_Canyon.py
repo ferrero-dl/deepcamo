@@ -2,9 +2,9 @@ class CFG:
     ########################
     #### initial setting ###
     ########################
-    input_path = "samples/inputs/crab.jpg"
-    mask_path = "samples/masks/crab_mask.png"  # Updated path
-    bg_path = "samples/inputs/mountain.jpg"
+    input_path = "samples/inputs/croc.jpeg"
+    mask_path = "samples/masks/croc_mask.jpeg"  # Updated path
+    bg_path = "samples/inputs/style_image.jpg"
     output_dir = "samples/outputs/HRNet/Canyon_kuma"
     name = "camouflage"
     seed = 0
@@ -12,7 +12,7 @@ class CFG:
     ########################
     #### mask setting ######
     ########################
-    mask_scale = 0.9
+    mask_scale = 0.7
     crop = True
     hidden_selected = None
 

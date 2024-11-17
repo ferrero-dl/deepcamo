@@ -328,7 +328,7 @@ def main(args):
 
             # Display visualization
             h_show, w_show, c = canvas.shape
-            cv2.imshow("now camouflage...", 
+            cv2.imshow("visualization", 
                       cv2.resize(canvas, (w_show//args.show_comp, h_show//args.show_comp)))
 
             # Log images to wandb
