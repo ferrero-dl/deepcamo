@@ -5,7 +5,7 @@ class CFG:
     input_path = "samples/inputs/croc.jpeg"
     mask_path = "samples/masks/croc_mask.jpeg"  # Updated path
     bg_path = "samples/inputs/style_image.jpg"
-    output_dir = "samples/outputs/HRNet/Canyon_kuma"
+    output_dir = "samples/outputs/HRNet/"
     name = "camouflage"
     seed = 0
 
