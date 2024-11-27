@@ -13,7 +13,7 @@ class CFG:
     ########################
     #### mask setting ######
     ########################
-    mask_scale = 0.7
+    mask_scale = 'max'
     crop = True
     hidden_selected = None
 

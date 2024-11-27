@@ -22,6 +22,143 @@ from hidden_recommend import recommend
 from utils import scaling, get_features, im_convert, attention_map_cv, gram_matrix_slice
 
 
+
+def visualize_scale_test(origin, fore, mask, scale, index, output_dir):
+    """
+    Visualize a single scale test by showing the scaled object placement in the background.
+    """
+    import os
+    
+    # Scale mask and foreground
+    scaled_mask = scaling(mask, scale=scale)
+    scaled_fore = scaling(fore, scale=scale)
+    h, w = scaled_mask.shape[:2]
+    
+    # Create visualization canvas
+    canvas = origin.copy()
+    
+    try:
+        # Try to find placement
+        y_start, x_start = recommend(origin, scaled_fore, scaled_fore)
+        
+        # Draw the placement if found
+        if y_start + h <= canvas.shape[0] and x_start + w <= canvas.shape[1]:
+            # Draw scaled object
+            mask_norm = scaled_mask/255.
+            canvas[y_start:y_start+h, x_start:x_start+w] = (
+                scaled_fore * np.expand_dims(mask_norm, axis=-1) + 
+                origin[y_start:y_start+h, x_start:x_start+w] * np.expand_dims(1.0-mask_norm, axis=-1)
+            )
+            
+            # Draw rectangle around placement
+            cv2.rectangle(canvas, (x_start, y_start), (x_start+w, y_start+h), (0, 255, 0), 2)
+            status = "VALID"
+        else:
+            status = "NO_FIT"
+    except:
+        status = "FAILED"
+    
+    # Add text overlay with scale info
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    text = f"Scale: {scale:.3f} - {status}"
+    cv2.putText(canvas, text, (10, 30), font, 1, (255, 255, 255), 2)
+    
+    # Save visualization
+    os.makedirs(output_dir, exist_ok=True)
+    cv2.imwrite(os.path.join(output_dir, f"scale_test_{index:03d}_{scale:.3f}.png"), 
+                cv2.cvtColor(canvas, cv2.COLOR_RGB2BGR))
+    
+    return canvas, status == "VALID"
+
+def find_maximum_scale(origin, fore, mask, min_scale=0.1, step=0.05, output_dir=None):
+    """
+    Find the maximum scale that allows the object to fit in the background while maintaining
+    good camouflage properties. Includes visualization of the process.
+    """
+    h_origin, w_origin = origin.shape[:2]
+    h_mask, w_mask = mask.shape[:2]
+    
+    # Start from a reasonably large scale
+    current_scale = min(
+        0.9 * h_origin / h_mask,  # 90% of height ratio
+        0.9 * w_origin / w_mask   # 90% of width ratio
+    )
+    
+    # Binary search for maximum viable scale
+    max_viable_scale = min_scale
+    min_search = min_scale
+    max_search = current_scale
+    
+    # Create visualization directory
+    if output_dir:
+        viz_dir = os.path.join(output_dir, "scale_selection")
+        os.makedirs(viz_dir, exist_ok=True)
+    
+    # Store all frames for animation
+    frames = []
+    test_index = 0
+    
+    print("Testing scales:")
+    while max_search - min_search > step:
+        test_scale = (min_search + max_search) / 2
+        print(f"  Testing scale {test_scale:.3f}")
+        
+        if output_dir:
+            frame, is_valid = visualize_scale_test(
+                origin, fore, mask, test_scale, test_index, viz_dir
+            )
+            frames.append(frame)
+            test_index += 1
+        else:
+            # Scale mask and check dimensions
+            scaled_mask = scaling(mask, scale=test_scale)
+            h, w = scaled_mask.shape[:2]
+            
+            if h >= h_origin or w >= w_origin:
+                is_valid = False
+            else:
+                # Try to find a valid placement
+                scaled_fore = scaling(fore, scale=test_scale)
+                try:
+                    y_start, x_start = recommend(origin, scaled_fore, scaled_mask)
+                    is_valid = (y_start + h <= h_origin and x_start + w <= w_origin)
+                except:
+                    is_valid = False
+        
+        if is_valid:
+            max_viable_scale = test_scale
+            min_search = test_scale
+        else:
+            max_search = test_scale
+            
+    # Create animation if we have frames
+    if output_dir and frames:
+        print("Creating scale selection animation...")
+        # Save animation as a video
+        h, w = frames[0].shape[:2]
+        video_path = os.path.join(viz_dir, "scale_selection.mp4")
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(video_path, fourcc, 2, (w, h))
+        
+        for frame in frames:
+            # Write frame to video
+            out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+            # Also write frame 2 more times to slow down animation
+            out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+            out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+        
+        out.release()
+        
+        # Save final result
+        final_frame, _ = visualize_scale_test(
+            origin, fore, mask, max_viable_scale, 999, viz_dir
+        )
+        cv2.imwrite(os.path.join(viz_dir, "final_scale.png"), 
+                    cv2.cvtColor(final_frame, cv2.COLOR_RGB2BGR))
+    
+    return max_viable_scale
+
+
 def main(args):
     torch.autograd.set_detect_anomaly(True)
     i_path = args.input_path
@@ -31,6 +168,41 @@ def main(args):
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
     torch.backends.cudnn.deterministic = True
+    
+    
+    
+        # Add automatic maximum scale selection
+    if args.mask_scale == 'max':
+        print("Finding maximum viable scale...")
+        mask = cv2.imread(args.mask_path, 0)
+        fore_origin = cv2.cvtColor(cv2.imread(args.input_path), cv2.COLOR_BGR2RGB)
+        origin = cv2.cvtColor(cv2.imread(args.bg_path), cv2.COLOR_BGR2RGB)
+        
+        max_scale = find_maximum_scale(
+            origin=origin,
+            fore=fore_origin,
+            mask=mask,
+            min_scale=0.1,
+            step=0.05,
+            output_dir=args.output_dir  # Pass output directory for visualizations
+        )
+        
+        print(f"Selected maximum viable scale: {max_scale:.3f}")
+        
+        # Update args with maximum scale
+        args.mask_scale = max_scale
+        
+        # Log to wandb if enabled
+        if wandb.run is not None:
+            wandb.log({
+                "maximum_scale": max_scale,
+                "scale_selection_video": wandb.Video(
+                    os.path.join(args.output_dir, "scale_selection", "scale_selection.mp4")
+                ),
+                "final_scale_image": wandb.Image(
+                    os.path.join(args.output_dir, "scale_selection", "final_scale.png")
+                )
+            })
 
     # Initialize wandb
     wandb.init(
