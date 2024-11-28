@@ -16,148 +16,194 @@ from sklearn.metrics.pairwise import cosine_distances, cosine_similarity
 from sklearn.manifold import LocallyLinearEmbedding
 from sklearn.neighbors import NearestNeighbors
 from sklearn.manifold._locally_linear import barycenter_kneighbors_graph
+from hidden_recommend import HOG, recommend
+from utils import scaling
 
 import HRNet
 from hidden_recommend import recommend
 from utils import scaling, get_features, im_convert, attention_map_cv, gram_matrix_slice
 
+def calculate_max_scale(bg_image, fore_image, mask, min_scale=0.1, max_scale=1.0, step=0.05, debug_dir=None):
+    """
+    Calculate the maximum possible scale for the foreground image, prioritizing larger scales
+    when similarity scores are comparable.
+    """
+    if debug_dir:
+        os.makedirs(debug_dir, exist_ok=True)
+        
+    h_bg, w_bg = bg_image.shape[:2]
+    best_scale = None
+    best_location = None
+    best_total_score = float('-inf')
+    scaled_mask_output = None
+    scaled_fore_output = None
+    
+    def calculate_region_similarity(bg_region, scaled_fore, mask_dilated):
+        # Calculate HOG features
+        bg_hog = HOG(bg_region)
+        fore_hog = HOG(scaled_fore)
+        
+        # Get HOG features under mask
+        h_hog, w_hog, _ = bg_hog.shape
+        mask_resized = cv2.resize(mask_dilated, (w_hog, h_hog))
+        mask_indices = np.where(mask_resized > 0)
+        
+        bg_hist = bg_hog[mask_indices]
+        fore_hist = fore_hog[mask_indices]
+        
+        # Calculate mean difference between HOG features
+        hog_diff = np.mean(np.abs(bg_hist - fore_hist))
+        
+        # Calculate color similarity in masked region
+        mask_bool = mask_dilated.astype(bool)
+        color_diff = np.mean(np.abs(bg_region[mask_bool] - scaled_fore[mask_bool]))
+        
+        # Combine metrics (lower is better)
+        similarity = -(0.7 * hog_diff + 0.3 * color_diff / 255.0)
+        
+        return similarity
 
+    def calculate_total_score(similarity, scale, max_scale):
+        """
+        Calculate total score combining similarity and scale preference.
+        Heavily weights larger scales when similarities are close.
+        """
+        # Normalize scale to 0-1 range
+        scale_factor = (scale - min_scale) / (max_scale - min_scale)
+        
+        # Add bonus for larger scales
+        scale_bonus = scale_factor * 0.1
+        
+        # Combine similarity with scale bonus
+        total_score = similarity + scale_bonus
+        
+        return total_score
 
-def visualize_scale_test(origin, fore, mask, scale, index, output_dir):
-    """
-    Visualize a single scale test by showing the scaled object placement in the background.
-    """
-    import os
-    
-    # Scale mask and foreground
-    scaled_mask = scaling(mask, scale=scale)
-    scaled_fore = scaling(fore, scale=scale)
-    h, w = scaled_mask.shape[:2]
-    
-    # Create visualization canvas
-    canvas = origin.copy()
-    
-    try:
-        # Try to find placement
-        y_start, x_start = recommend(origin, scaled_fore, scaled_fore)
+    def create_visualization(scale, y_start, x_start, scaled_fore, scaled_mask, 
+                           similarity, total_score, bg_copy, is_best=False):
+        """Create a visualization of the current scale attempt"""
+        vis_image = bg_copy.copy()
         
-        # Draw the placement if found
-        if y_start + h <= canvas.shape[0] and x_start + w <= canvas.shape[1]:
-            # Draw scaled object
-            mask_norm = scaled_mask/255.
-            canvas[y_start:y_start+h, x_start:x_start+w] = (
-                scaled_fore * np.expand_dims(mask_norm, axis=-1) + 
-                origin[y_start:y_start+h, x_start:x_start+w] * np.expand_dims(1.0-mask_norm, axis=-1)
-            )
+        h_scaled, w_scaled = scaled_mask.shape[:2]
+        mask_norm = scaled_mask / 255.0
+        
+        if (y_start >= 0 and x_start >= 0 and 
+            y_start + h_scaled <= h_bg and x_start + w_scaled <= w_bg):
             
-            # Draw rectangle around placement
-            cv2.rectangle(canvas, (x_start, y_start), (x_start+w, y_start+h), (0, 255, 0), 2)
-            status = "VALID"
-        else:
-            status = "NO_FIT"
-    except:
-        status = "FAILED"
-    
-    # Add text overlay with scale info
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    text = f"Scale: {scale:.3f} - {status}"
-    cv2.putText(canvas, text, (10, 30), font, 1, (255, 255, 255), 2)
-    
-    # Save visualization
-    os.makedirs(output_dir, exist_ok=True)
-    cv2.imwrite(os.path.join(output_dir, f"scale_test_{index:03d}_{scale:.3f}.png"), 
-                cv2.cvtColor(canvas, cv2.COLOR_RGB2BGR))
-    
-    return canvas, status == "VALID"
+            roi = vis_image[y_start:y_start+h_scaled, x_start:x_start+w_scaled]
+            vis_image[y_start:y_start+h_scaled, x_start:x_start+w_scaled] = \
+                scaled_fore * np.expand_dims(mask_norm, axis=-1) + \
+                roi * np.expand_dims(1.0 - mask_norm, axis=-1)
+                
+            color = (0,255,0) if is_best else (0,0,255)
+            cv2.rectangle(vis_image, (x_start, y_start), 
+                        (x_start+w_scaled, y_start+h_scaled), color, 2)
+            
+        text = f"Scale: {scale:.2f}, Sim: {similarity:.3f}, Score: {total_score:.3f}"
+        text += " (BEST)" if is_best else ""
+        cv2.putText(vis_image, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 
+                    1, (0,255,0), 2)
+        
+        return vis_image
 
-def find_maximum_scale(origin, fore, mask, min_scale=0.1, step=0.05, output_dir=None):
-    """
-    Find the maximum scale that allows the object to fit in the background while maintaining
-    good camouflage properties. Includes visualization of the process.
-    """
-    h_origin, w_origin = origin.shape[:2]
-    h_mask, w_mask = mask.shape[:2]
+    # Store all valid attempts
+    scale_attempts = []
+    bg_copy = bg_image.copy()
     
-    # Start from a reasonably large scale
-    current_scale = min(
-        0.9 * h_origin / h_mask,  # 90% of height ratio
-        0.9 * w_origin / w_mask   # 90% of width ratio
-    )
-    
-    # Binary search for maximum viable scale
-    max_viable_scale = min_scale
-    min_search = min_scale
-    max_search = current_scale
-    
-    # Create visualization directory
-    if output_dir:
-        viz_dir = os.path.join(output_dir, "scale_selection")
-        os.makedirs(viz_dir, exist_ok=True)
-    
-    # Store all frames for animation
-    frames = []
-    test_index = 0
-    
-    print("Testing scales:")
-    while max_search - min_search > step:
-        test_scale = (min_search + max_search) / 2
-        print(f"  Testing scale {test_scale:.3f}")
+    # Try scales from max to min
+    for scale in np.arange(max_scale, min_scale - step, -step):
+        print(f"Trying scale {scale:.2f}")
         
-        if output_dir:
-            frame, is_valid = visualize_scale_test(
-                origin, fore, mask, test_scale, test_index, viz_dir
-            )
-            frames.append(frame)
-            test_index += 1
-        else:
-            # Scale mask and check dimensions
-            scaled_mask = scaling(mask, scale=test_scale)
-            h, w = scaled_mask.shape[:2]
+        scaled_mask = scaling(mask, scale=scale)
+        scaled_fore = scaling(fore_image, scale=scale)
+        
+        h_scaled, w_scaled = scaled_mask.shape[:2]
+        
+        if h_scaled >= h_bg or w_scaled >= w_bg:
+            print(f"Scale {scale:.2f} too large, skipping")
+            continue
             
-            if h >= h_origin or w >= w_origin:
-                is_valid = False
-            else:
-                # Try to find a valid placement
-                scaled_fore = scaling(fore, scale=test_scale)
-                try:
-                    y_start, x_start = recommend(origin, scaled_fore, scaled_mask)
-                    is_valid = (y_start + h <= h_origin and x_start + w <= w_origin)
-                except:
-                    is_valid = False
-        
-        if is_valid:
-            max_viable_scale = test_scale
-            min_search = test_scale
-        else:
-            max_search = test_scale
+        try:
+            mask_dilated = np.where(scaled_mask>0, 255, 0).astype(np.uint8)
+            y_start, x_start = recommend(bg_image, scaled_fore, mask_dilated)
             
-    # Create animation if we have frames
-    if output_dir and frames:
-        print("Creating scale selection animation...")
-        # Save animation as a video
-        h, w = frames[0].shape[:2]
-        video_path = os.path.join(viz_dir, "scale_selection.mp4")
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(video_path, fourcc, 2, (w, h))
-        
-        for frame in frames:
-            # Write frame to video
-            out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
-            # Also write frame 2 more times to slow down animation
-            out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
-            out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
-        
-        out.release()
-        
-        # Save final result
-        final_frame, _ = visualize_scale_test(
-            origin, fore, mask, max_viable_scale, 999, viz_dir
+            if (y_start + h_scaled <= h_bg and 
+                x_start + w_scaled <= w_bg and 
+                y_start >= 0 and 
+                x_start >= 0):
+                
+                bg_region = bg_image[y_start:y_start+h_scaled, x_start:x_start+w_scaled]
+                similarity = calculate_region_similarity(bg_region, scaled_fore, mask_dilated)
+                total_score = calculate_total_score(similarity, scale, max_scale)
+                
+                print(f"Scale {scale:.2f} - Similarity: {similarity:.3f}, Total Score: {total_score:.3f}")
+                
+                scale_attempts.append({
+                    'scale': scale,
+                    'similarity': similarity,
+                    'total_score': total_score,
+                    'location': (y_start, x_start),
+                    'mask': scaled_mask,
+                    'fore': scaled_fore
+                })
+                
+                if total_score > best_total_score:
+                    best_total_score = total_score
+                    best_scale = scale
+                    best_location = (y_start, x_start)
+                    scaled_mask_output = scaled_mask
+                    scaled_fore_output = scaled_fore
+                    
+        except Exception as e:
+            print(f"Error at scale {scale:.2f}: {str(e)}")
+            continue
+            
+    if best_scale is None:
+        raise ValueError("Could not find a valid scale for the image")
+    
+    # Create visualizations for all attempts
+    vis_grid = []
+    for attempt in scale_attempts:
+        is_best = (attempt['scale'] == best_scale)
+        vis = create_visualization(
+            attempt['scale'], 
+            attempt['location'][0], 
+            attempt['location'][1], 
+            attempt['fore'], 
+            attempt['mask'], 
+            attempt['similarity'],
+            attempt['total_score'],
+            bg_copy,
+            is_best
         )
-        cv2.imwrite(os.path.join(viz_dir, "final_scale.png"), 
-                    cv2.cvtColor(final_frame, cv2.COLOR_RGB2BGR))
+        vis_grid.append(vis)
+        
+        if debug_dir:
+            cv2.imwrite(
+                os.path.join(debug_dir, f'scale_{attempt["scale"]:.2f}.png'),
+                cv2.cvtColor(vis, cv2.COLOR_RGB2BGR)
+            )
     
-    return max_viable_scale
-
+    # Create final visualization grid
+    if vis_grid:
+        rows = int(np.ceil(len(vis_grid) / 3))
+        grid_h, grid_w = vis_grid[0].shape[:2]
+        grid_image = np.zeros((grid_h * rows, grid_w * 3, 3), dtype=np.uint8)
+        
+        for idx, vis in enumerate(vis_grid):
+            row = idx // 3
+            col = idx % 3
+            grid_image[row*grid_h:(row+1)*grid_h, col*grid_w:(col+1)*grid_w] = vis
+            
+        if debug_dir:
+            cv2.imwrite(
+                os.path.join(debug_dir, 'scale_grid.png'),
+                cv2.cvtColor(grid_image, cv2.COLOR_RGB2BGR)
+            )
+    
+    print(f"Selected scale {best_scale:.3f} with similarity {similarity:.3f} and total score {best_total_score:.3f}")
+    print(f"Explored {len(scale_attempts)} different scales")
+    return best_scale, best_location, scaled_mask_output, scaled_fore_output
 
 def main(args):
     torch.autograd.set_detect_anomaly(True)
@@ -168,41 +214,6 @@ def main(args):
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
     torch.backends.cudnn.deterministic = True
-    
-    
-    
-        # Add automatic maximum scale selection
-    if args.mask_scale == 'max':
-        print("Finding maximum viable scale...")
-        mask = cv2.imread(args.mask_path, 0)
-        fore_origin = cv2.cvtColor(cv2.imread(args.input_path), cv2.COLOR_BGR2RGB)
-        origin = cv2.cvtColor(cv2.imread(args.bg_path), cv2.COLOR_BGR2RGB)
-        
-        max_scale = find_maximum_scale(
-            origin=origin,
-            fore=fore_origin,
-            mask=mask,
-            min_scale=0.1,
-            step=0.05,
-            output_dir=args.output_dir  # Pass output directory for visualizations
-        )
-        
-        print(f"Selected maximum viable scale: {max_scale:.3f}")
-        
-        # Update args with maximum scale
-        args.mask_scale = max_scale
-        
-        # Log to wandb if enabled
-        if wandb.run is not None:
-            wandb.log({
-                "maximum_scale": max_scale,
-                "scale_selection_video": wandb.Video(
-                    os.path.join(args.output_dir, "scale_selection", "scale_selection.mp4")
-                ),
-                "final_scale_image": wandb.Image(
-                    os.path.join(args.output_dir, "scale_selection", "final_scale.png")
-                )
-            })
 
     # Initialize wandb
     wandb.init(
@@ -246,12 +257,33 @@ def main(args):
             ToTensorV2(),
     ])   
 
-    # try to give fore con_layers more weight so that can get more detail in output iamge
+    # try to give fore con_layers more weight so that can get more detail in output image
     style_weights = args.style_weight_dic
             
+    # Load images first
     mask = cv2.imread(m_path, 0)
-    mask = scaling(mask, scale=args.mask_scale)
-    
+    fore_origin = cv2.cvtColor(cv2.imread(i_path), cv2.COLOR_BGR2RGB)
+    origin = cv2.cvtColor(cv2.imread(bg_path), cv2.COLOR_BGR2RGB)
+# Create a debug directory for visualizations
+    debug_dir = os.path.join(args.output_dir, 'scale_debug')
+
+    # Calculate dynamic scale with visualizations
+    max_scale, hidden_location, scaled_mask, scaled_fore = calculate_max_scale(
+        origin,
+        fore_origin,
+        mask,
+        min_scale=0.4,
+        max_scale=args.mask_scale,
+        debug_dir=debug_dir
+    )
+    print(f"Calculated optimal scale: {max_scale:.3f}")
+
+    # Use scaled versions for further processing
+    mask = scaled_mask
+    fore_origin = scaled_fore
+    args.hidden_selected = hidden_location
+
+    # Continue with cropping if enabled
     if args.crop:
         idx_y, idx_x = np.where(mask > 0)
         x1_m, y1_m, x2_m, y2_m = np.min(idx_x), np.min(idx_y), np.max(idx_x), np.max(idx_y)
@@ -259,16 +291,14 @@ def main(args):
         x1_m, y1_m = 0, 0
         y2_m, x2_m = mask.shape
         x2_m, y2_m = 8*(x2_m//8), 8*(y2_m//8)
-        
+
     x1_m = 8*(x1_m//8)
     x2_m = 8*(x2_m//8)
     y1_m = 8*(y1_m//8)
     y2_m = 8*(y2_m//8)
-    
-    fore_origin = cv2.cvtColor(cv2.imread(i_path), cv2.COLOR_BGR2RGB)
-    fore_origin = scaling(fore_origin, scale=args.mask_scale)
+
+    # Get the cropped foreground
     fore = fore_origin[y1_m:y2_m, x1_m:x2_m]
-   
     mask_crop = mask[y1_m:y2_m, x1_m:x2_m]
     mask_crop = np.where(mask_crop>0, 255, 0).astype(np.uint8)
     kernel = np.ones((15,15), np.uint8)
@@ -536,4 +566,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
     params = import_module(args.params)
     main(params.CFG)
-        
